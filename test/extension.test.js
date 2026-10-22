@@ -271,3 +271,93 @@ test('cloze rejects missing, duplicate and invalid fields without partial change
   }
   assert.equal(w.MoodleIA.apply(q, { id: q.id, values: [] }), false);
 });
+
+// Moodle's multianswer renderer returns inline content directly inside the
+// engine's .formulation wrapper, without a .qtext or .answer container.
+// Reference: moodle/moodle MOODLE_405_STABLE question/type/multianswer/renderer.php
+// and question/engine/renderer.php.
+function nativeCloze() {
+  const html = `<div class="que multianswer" id="question-123-1"><div class="info">Question 1</div>
+  <div class="content"><div class="formulation clearfix"><h4 class="accesshide">Texte de la question</h4>
+  <input type="hidden" name="q123:1_:sequencecheck" value="1">
+  <p>Applications de la programmation fonctionnelle :</p><ul>
+  <li>Applications t<span class="subquestion"><label class="subq accesshide" for="a">Réponse 1</label><input type="text" id="a" name="q123:1_sub1_answer" class="form-control d-inline mb-1"></span>
+  et m<span class="subquestion"><label class="subq accesshide" for="b">Réponse 2</label><input type="text" id="b" name="q123:1_sub2_answer"></span></li>
+  </ul></div><div class="outcome"><div class="specificfeedback">Feedback privé à exclure</div></div></div></div>`;
+  const { window } = new JSDOM(html, { runScripts: 'outside-only', url: 'https://moodle.example/mod/quiz/attempt.php' });
+  window.eval(source('questions.js'));
+  return window;
+}
+test('native Moodle multianswer without qtext is detected and excludes hidden fields and accessibility labels', () => {
+  const w = nativeCloze();
+  const questions = w.MoodleIA.collect(w.document);
+  assert.equal(questions.length, 1);
+  const [q] = questions;
+  assert.equal(q.type, 'blanks');
+  assert.equal(q.fields.length, 2);
+  assert.match(q.prompt, /t\[champ 0\]\s+et m\[champ 1\]/);
+  assert.equal(q.prompt.includes('Réponse'), false);
+  assert.equal(q.prompt.includes('Feedback'), false);
+  assert.equal(q.prompt.includes('Texte de la question'), false);
+});
+test('panel detects and fills native multianswer formulation with a simulated AI response', async () => {
+  const w = nativeCloze();
+  let root;
+  const attach = w.Element.prototype.attachShadow;
+  w.Element.prototype.attachShadow = function(options) { root = attach.call(this, options); return root; };
+  w.alert = () => assert.fail('Native Moodle cloze must be detected');
+  w.chrome = { runtime: { sendMessage: async message => ({ result: { answers: [{
+    id: message.questions[0].id,
+    values: [{ id: '1', text: 'test-b' }, { id: '0', text: 'test-a' }]
+  }] } }) } };
+  w.eval(source('content.js'));
+  const allowed = root.querySelector('#allowed');
+  allowed.checked = true; allowed.dispatchEvent(new w.Event('change'));
+  root.querySelector('#answer').click();
+  await new Promise(done => setImmediate(done));
+  assert.equal(w.document.querySelector('#a').value, 'test-a');
+  assert.equal(w.document.querySelector('#b').value, 'test-b');
+  assert.equal(w.document.querySelector('input[type=hidden]').value, '1');
+  assert.match(root.querySelector('#status').textContent, /1\/1/);
+});
+
+async function modelOptions(fetch, session = { apiKey_groq: 'groq-test-only' }) {
+  const { window: w } = new JSDOM(source('options.html'), { runScripts: 'outside-only' });
+  const local = { provider: 'groq', model_groq: 'retired-model' };
+  const storage = data => ({ get: async () => ({ ...data }), set: async update => Object.assign(data, update) });
+  w.chrome = { storage: { local: storage(local), session: storage(session) } };
+  w.fetch = fetch;
+  w.eval(source('providers.js'));
+  w.eval(source('options.js'));
+  await new Promise(done => setImmediate(done));
+  return { w, local, load: () => w.document.querySelector('#load-models').onclick() };
+}
+test('loads actual Groq model IDs with the correct key and can save an available replacement', async () => {
+  const { w, local, load } = await modelOptions(async (url, options) => {
+    assert.equal(url, 'https://api.groq.com/openai/v1/models');
+    assert.equal(options.headers.Authorization, 'Bearer groq-test-only');
+    return { ok: true, json: async () => ({ data: [
+      { id: 'whisper-large-v3' }, { id: 'llama-3.1-8b-instant', active: true },
+      { id: 'retired-model', active: false }, { id: 'future-conversation-model' }
+    ] }) };
+  });
+  await load();
+  assert.equal(w.document.querySelector('#model').value, 'llama-3.1-8b-instant');
+  assert.equal(local.model_groq, 'retired-model');
+  const select = w.document.querySelector('#available-models');
+  assert.deepEqual(Array.from(select.options, option => option.value), ['', 'future-conversation-model', 'llama-3.1-8b-instant']);
+  select.value = 'future-conversation-model'; select.dispatchEvent(new w.Event('change'));
+  w.document.querySelector('form').dispatchEvent(new w.Event('submit', { cancelable: true }));
+  await new Promise(done => setImmediate(done));
+  assert.equal(local.model_groq, 'future-conversation-model');
+  assert.equal(JSON.stringify(local).includes('test-only'), false);
+});
+test('model loading handles rejected or missing keys without sending an OpenAI key to Groq', async () => {
+  const denied = await modelOptions(async () => ({ ok: false, status: 401 }));
+  await denied.load();
+  assert.match(denied.w.document.querySelector('#status').textContent, /Clé refusée/);
+  assert.equal(denied.w.document.querySelector('#load-models').disabled, false);
+  const missing = await modelOptions(() => assert.fail('Must not call Groq with OpenAI key'), { apiKey: 'openai-test-only' });
+  await missing.load();
+  assert.match(missing.w.document.querySelector('#status').textContent, /Saisissez votre clé Groq/);
+});

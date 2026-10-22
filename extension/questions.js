@@ -28,6 +28,7 @@
       const index = fields.indexOf(originals[i]);
       node.replaceWith(index >= 0 ? `[champ ${index}]` : '');
     });
+    markedPrompt.querySelectorAll('script,style,.accesshide,.sr-only,.visually-hidden,.feedback,.specificfeedback,.validationerror').forEach(node => node.remove());
     return [{ id, prompt: clean(markedPrompt),
       images: [...prompt.querySelectorAll('img')].map(img => img.alt || 'Image sans description'),
       type, choices, ...(type === 'blanks' ? { blanks: fields.map((field, i) => ({ id: String(i) })) } : {}), fields }];
@@ -60,7 +61,7 @@
   }
   function collect(doc) {
     const standard = [...doc.querySelectorAll('.que')].flatMap((container, index) => {
-      const prompt = container.querySelector('.qtext');
+      const prompt = container.querySelector('.qtext') || container.querySelector('.formulation');
       const area = prompt?.querySelector('input:not([type=hidden]),textarea,select') ? prompt : container.querySelector('.answer');
       if (!prompt || !area) return [];
       const fields = [...area.querySelectorAll('input:not([type=hidden]), textarea, select')]

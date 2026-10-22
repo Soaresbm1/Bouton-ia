@@ -49,7 +49,7 @@ async function answer(questions) {
       })
     });
     if (!response.ok) {
-      const errors = { 400: 'Requête refusée. Vérifiez que le modèle choisi prend en charge le mode JSON.', 401: `Clé API ${config.name} refusée.`, 403: `Accès ${config.name} refusé pour ce compte.`, 404: 'Modèle introuvable. Vérifiez son nom dans les réglages.', 429: 'Quota API épuisé ou limite de requêtes atteinte. Réessayez plus tard.' };
+      const errors = { 400: 'Requête refusée. Vérifiez que le modèle choisi prend en charge le mode JSON.', 401: `Clé API ${config.name} refusée.`, 403: `Accès ${config.name} refusé pour ce compte.`, 404: `Modèle « ${model} » introuvable ou inaccessible chez ${config.name}. Dans Réglages, cliquez sur « Charger les modèles disponibles », choisissez un modèle puis enregistrez.`, 429: 'Quota API épuisé ou limite de requêtes atteinte. Réessayez plus tard.' };
       throw new Error(errors[response.status] || `Erreur du service IA (HTTP ${response.status}).`);
     }
     const payload = await response.json();

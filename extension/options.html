@@ -14,6 +14,9 @@ button { margin:20px 8px 0 0; padding:12px; border:0; border-radius:8px; backgro
 <label>Clé API du fournisseur choisi<input id="key" type="password" autocomplete="off" placeholder="Saisir une clé pour cette session du navigateur"></label>
 <p>La clé reste dans la mémoire de session de l’extension, sans synchronisation. Elle est effacée au redémarrage du navigateur ou au rechargement de l’extension. Laissez le champ vide pour conserver la clé de la session.</p>
 <label>Modèle<input id="model" required value="gpt-4.1-mini" spellcheck="false"></label>
+<button type="button" id="load-models">Charger les modèles disponibles</button>
+<label>Modèles renvoyés par votre fournisseur<select id="available-models"><option value="">Chargez la liste avec votre clé</option></select></label>
+<p>Après avoir choisi un modèle dans la liste, cliquez sur Enregistrer. La liste confirme sa présence chez le fournisseur ; une génération peut encore dépendre des droits et quotas du compte.</p>
 <button type="submit">Enregistrer</button><button type="button" id="clear">Effacer la clé</button>
 </form>
 <p id="status" role="status"></p>

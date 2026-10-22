@@ -12,9 +12,11 @@ Extension Chrome / Edge qui lit les questions de la page Moodle, demande une ré
 
 Créez votre clé depuis [GroqCloud](https://console.groq.com/keys) ou [OpenAI](https://platform.openai.com/api-keys). Le palier gratuit Groq dépend des modèles et quotas de votre compte ; les limites peuvent évoluer. Un abonnement ChatGPT ne comprend pas de crédit API OpenAI. Ne partagez jamais la clé dans le dépôt ou dans une conversation. La génération nécessite une clé avec un quota disponible.
 
+Si un modèle est introuvable, ouvrez les options et cliquez sur **Charger les modèles disponibles** après avoir saisi votre clé. L’extension interroge directement l’API `/models` du fournisseur sélectionné, sans transmettre la clé ailleurs. Choisissez un modèle de conversation dans la liste puis cliquez sur **Enregistrer**. Les modèles de reconnaissance audio, de voix, d’embeddings et de sécurité identifiables par leur nom sont exclus de cette liste. La liste est celle renvoyée par le fournisseur ; elle ne garantit pas l’accès à une génération ni la compatibilité JSON de chaque modèle.
+
 ### Mettre à jour une ancienne version
 
-Téléchargez de nouveau le dépôt et décompressez-le. Vous pouvez remplacer les fichiers de votre ancien dossier par ceux de la nouvelle version, puis cliquer sur **Recharger** dans la fiche de l’extension sur `edge://extensions`. Si vous utilisez un nouveau dossier, supprimez l’ancienne extension et chargez le nouveau dossier `extension`. La version affichée doit être **0.2.1**. Acceptez l’autorisation d’accès à `api.groq.com` si le navigateur la demande. Ouvrez les options, choisissez **Groq**, saisissez votre clé et enregistrez. Rechargez la page Moodle avant de relancer l’extension.
+Téléchargez de nouveau le dépôt et décompressez-le. Vous pouvez remplacer les fichiers de votre ancien dossier par ceux de la nouvelle version, puis cliquer sur **Recharger** dans la fiche de l’extension sur `edge://extensions`. Si vous utilisez un nouveau dossier, supprimez l’ancienne extension et chargez le nouveau dossier `extension`. La version affichée doit être **0.2.2**. Acceptez l’autorisation d’accès à `api.groq.com` si le navigateur la demande. Ouvrez les options, choisissez **Groq**, saisissez votre clé et enregistrez. Rechargez la page Moodle avant de relancer l’extension.
 
 ## Utilisation
 
