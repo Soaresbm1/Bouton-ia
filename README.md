@@ -14,7 +14,7 @@ Créez votre clé depuis [GroqCloud](https://console.groq.com/keys) ou [OpenAI](
 
 ### Mettre à jour une ancienne version
 
-Téléchargez de nouveau le dépôt et décompressez-le. Vous pouvez remplacer les fichiers de votre ancien dossier par ceux de la nouvelle version, puis cliquer sur **Recharger** dans la fiche de l’extension sur `edge://extensions`. Si vous utilisez un nouveau dossier, supprimez l’ancienne extension et chargez le nouveau dossier `extension`. La version affichée doit être **0.2.0**. Acceptez l’autorisation d’accès à `api.groq.com` si le navigateur la demande. Ouvrez les options, choisissez **Groq**, saisissez votre clé et enregistrez. Rechargez la page Moodle avant de relancer l’extension.
+Téléchargez de nouveau le dépôt et décompressez-le. Vous pouvez remplacer les fichiers de votre ancien dossier par ceux de la nouvelle version, puis cliquer sur **Recharger** dans la fiche de l’extension sur `edge://extensions`. Si vous utilisez un nouveau dossier, supprimez l’ancienne extension et chargez le nouveau dossier `extension`. La version affichée doit être **0.2.1**. Acceptez l’autorisation d’accès à `api.groq.com` si le navigateur la demande. Ouvrez les options, choisissez **Groq**, saisissez votre clé et enregistrez. Rechargez la page Moodle avant de relancer l’extension.
 
 ## Utilisation
 
@@ -25,7 +25,9 @@ Téléchargez de nouveau le dépôt et décompressez-le. Vous pouvez remplacer l
 
 Après un changement de page, cliquez à nouveau sur l’icône. Les questions des autres pages ne sont pas traitées. Un nouveau clic sur « Demander et remplir » peut remplacer les réponses déjà saisies et entraîne une nouvelle requête API.
 
-Formats pris en charge : choix unique, choix multiple, vrai/faux (boutons radio Moodle) et réponse courte dans un champ texte ou numérique. Les appariements, menus déroulants, glisser-déposer et rédactions ne sont pas traités. Les images ne sont pas envoyées : seul leur texte alternatif est transmis. Les exercices nécessitant une image sans description suffisante peuvent rester sans réponse. Les réponses d’IA peuvent être incorrectes.
+Formats pris en charge : choix unique, choix multiple, vrai/faux (boutons radio Moodle), réponse courte et texte à trous avec plusieurs champs texte ou numériques dans la même question (y compris les champs intégrés dans l’énoncé). Chaque trou est repéré par un identifiant pour associer la réponse au bon champ ; une liste incomplète ou invalide est refusée. Les appariements, menus déroulants, glisser-déposer et rédactions ne sont pas traités. Les images ne sont pas envoyées : seul leur texte alternatif est transmis. Les exercices nécessitant une image sans description suffisante peuvent rester sans réponse. Les réponses d’IA peuvent être incorrectes et les questions liées à un cours absent peuvent rester sans réponse.
+
+Les QCM personnalisés intégrés dans une activité Page Moodle (`mod/page/view.php`) sont aussi détectés quand leur contenu principal comporte un titre HTML « Question 1 », « Question 2 », etc., suivi de l’énoncé et des champs. Les libellés peuvent être associés aux cases ou écrits directement après elles. Aucun clic sur « Corriger » n’est effectué. Si le minuteur remplace la question, ses choix ou ses champs pendant la requête IA, le remplissage de cette réponse est annulé : relancez sur la nouvelle question. L’extension ne suspend pas le minuteur. Cette détection est vérifiée sur des pages simulées, pas encore sur le DOM réel de Moodle S2 ; les exercices dans une iframe ne sont pas pris en charge.
 
 ## Données et permissions
 

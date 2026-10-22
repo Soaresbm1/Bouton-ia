@@ -157,3 +157,117 @@ test('provider options save Groq key in session only and preserve OpenAI setting
   assert.equal(session.apiKey_groq, undefined);
   assert.equal(session.apiKey, 'openai-test-only');
 });
+
+const drillFixture = `<header><input type="text" value="Recherche privée"></header>
+<main id="region-main"><h1>Drill des objectifs</h1>
+<h2>Question 1</h2><p id="prompt">Synonyme de programmation <strong>fonctionnelle</strong> ?</p>
+<p><input type="checkbox">Programmation en F#, Haskell, Clojure ou Ocaml</p>
+<p><input type="checkbox">Impérative</p>
+<p><input type="checkbox">Déclarative</p>
+<p>Temps restant : <span id="time">4</span></p><button id="correct">Corriger</button>
+<footer><input type="text" value="Champ hors exercice"></footer></main>`;
+function drill(html = drillFixture) {
+  const { window } = new JSDOM(html, { runScripts: 'outside-only', url: 'https://learn.s2.rpn.ch/mod/page/view.php?id=403102' });
+  window.eval(source('questions.js'));
+  return window;
+}
+test('custom Moodle page drill extracts heading, prompt and unlabelled checkbox choices', () => {
+  const w = drill();
+  const [q] = w.MoodleIA.collect(w.document);
+  assert.equal(q.prompt, 'Synonyme de programmation fonctionnelle ?');
+  assert.equal(q.type, 'multiple');
+  assert.deepEqual(Array.from(q.choices, c => c.label), ['Programmation en F#, Haskell, Clojure ou Ocaml', 'Impérative', 'Déclarative']);
+  let corrections = 0;
+  w.document.querySelector('#correct').onclick = () => corrections++;
+  w.document.querySelector('#time').textContent = '3';
+  w.MoodleIA.apply(q, { id: q.id, choices: ['0', '2'] });
+  assert.deepEqual(Array.from(q.fields, f => f.checked), [true, false, true]);
+  assert.equal(corrections, 0);
+  assert.equal(w.document.querySelector('header input').value, 'Recherche privée');
+});
+test('custom drill bounds each question and also handles inline choices', () => {
+  const w = drill(`<main><h2>Question 1</h2><p>Deux plus deux ?</p>
+    <input type="radio" name="one">3<br><input type="radio" name="one">4<br>
+    <h2>Question 2</h2><p>Capitale ?</p><label><input type="radio" name="two">Paris</label>
+    <label><input type="radio" name="two">Berne</label><button>Corriger</button></main>`);
+  const qs = w.MoodleIA.collect(w.document);
+  assert.equal(qs.length, 2);
+  assert.deepEqual(Array.from(qs[0].choices, c => c.label), ['3', '4']);
+  assert.equal(qs[1].prompt, 'Capitale ?');
+  assert.equal(qs[1].fields.length, 2);
+});
+test('changed question text or replaced inputs prevents stale AI answers from filling', () => {
+  const w = drill();
+  const [q] = w.MoodleIA.collect(w.document);
+  w.document.querySelector('#prompt').textContent = 'Une autre question';
+  assert.throws(() => w.MoodleIA.apply(q, { id: q.id, choices: ['0'] }), /question a changé/);
+  assert.equal(q.fields.some(f => f.checked), false);
+  const [next] = w.MoodleIA.collect(w.document);
+  next.fields[0].replaceWith(next.fields[0].cloneNode());
+  assert.throws(() => w.MoodleIA.apply(next, { id: next.id, choices: ['0'] }), /question a changé/);
+  assert.equal(w.document.querySelector('main input').checked, false);
+});
+test('panel opens on custom drill and reports question changes during an API request', async () => {
+  const w = drill();
+  let root, resolve;
+  const attach = w.Element.prototype.attachShadow;
+  w.Element.prototype.attachShadow = function(options) { root = attach.call(this, options); return root; };
+  w.chrome = { runtime: { sendMessage: () => new Promise(done => { resolve = done; }) } };
+  w.eval(source('content.js'));
+  assert.ok(root);
+  const allowed = root.querySelector('#allowed');
+  allowed.checked = true; allowed.dispatchEvent(new w.Event('change'));
+  root.querySelector('#answer').click();
+  const [q] = w.MoodleIA.collect(w.document);
+  w.document.querySelector('#prompt').textContent = 'Question suivante';
+  resolve({ result: { answers: [{ id: q.id, choices: ['0'] }] } });
+  await new Promise(done => setImmediate(done));
+  assert.match(root.querySelector('#status').textContent, /0\/1/);
+  assert.match(root.querySelector('#details').textContent, /question a changé/);
+  assert.equal(q.fields.some(field => field.checked), false);
+});
+
+const clozeFixture = `<form><div class="que" id="cloze1"><div class="qtext">
+<p>Applications de la programmation fonctionnelle :</p><ul>
+<li>Applications t<span class="answer"><input type="text" value="ancienne réponse"></span> et m<input type="text"></li>
+<li>Domaine spécifique en 2 lettres <input type="text"></li>
+<li>Compilateurs et <input type="text"></li><li>A<input type="text"></li></ul>
+</div></div><button type="submit">Page suivante</button></form>`;
+function cloze() {
+  const { window } = new JSDOM(clozeFixture, { runScripts: 'outside-only', url: 'https://moodle.example/mod/quiz/attempt.php' });
+  window.eval(source('questions.js'));
+  return window;
+}
+test('Moodle cloze extracts all inline fields with numbered markers, not saved answers', () => {
+  const w = cloze();
+  const [q] = w.MoodleIA.collect(w.document);
+  assert.equal(q.type, 'blanks');
+  assert.equal(q.fields.length, 5);
+  assert.match(q.prompt, /t\[champ 0\] et m\[champ 1\]/);
+  assert.match(q.prompt, /A\[champ 4\]/);
+  assert.equal(q.prompt.includes('ancienne réponse'), false);
+  assert.deepEqual(Array.from(q.blanks, blank => blank.id), ['0', '1', '2', '3', '4']);
+});
+test('cloze matches returned values by ID even out of order and never submits', () => {
+  const w = cloze();
+  const [q] = w.MoodleIA.collect(w.document);
+  let submissions = 0, inputs = 0;
+  w.document.querySelector('form').onsubmit = event => { event.preventDefault(); submissions++; };
+  w.document.addEventListener('input', () => inputs++);
+  const values = ['texte-a', 'texte-b', 'XX', 'texte-c', 'texte-d'].map((text, i) => ({ id: String(i), text })).reverse();
+  assert.equal(w.MoodleIA.apply(q, { id: q.id, values }), true);
+  assert.deepEqual(Array.from(q.fields, field => field.value), ['texte-a', 'texte-b', 'XX', 'texte-c', 'texte-d']);
+  assert.equal(inputs, 5);
+  assert.equal(submissions, 0);
+});
+test('cloze rejects missing, duplicate and invalid fields without partial changes', () => {
+  const w = cloze();
+  const [q] = w.MoodleIA.collect(w.document);
+  const values = q.fields.map((field, i) => ({ id: String(i), text: `test ${i}` }));
+  for (const invalid of [values.slice(1), [...values.slice(1), values[1]], [...values.slice(1), { id: '99', text: 'test' }]]) {
+    assert.throws(() => w.MoodleIA.apply(q, { id: q.id, values: invalid }), /invalides ou incomplètes/);
+    assert.equal(q.fields[0].value, 'ancienne réponse');
+    assert.equal(q.fields[1].value, '');
+  }
+  assert.equal(w.MoodleIA.apply(q, { id: q.id, values: [] }), false);
+});

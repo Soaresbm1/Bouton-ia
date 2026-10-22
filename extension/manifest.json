@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Bouton IA — Entraînement Moodle",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Propose et remplit des réponses pour vos entraînements Moodle autorisés, sans soumettre le test.",
   "permissions": ["activeTab", "scripting", "storage"],
   "host_permissions": ["https://api.openai.com/*", "https://api.groq.com/*"],
