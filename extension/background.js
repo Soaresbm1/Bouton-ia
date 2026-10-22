@@ -1,3 +1,5 @@
+importScripts('providers.js');
+
 chrome.action.onClicked.addListener(async (tab) => {
   if (!tab.id || !/^https?:/.test(tab.url || '')) return;
   try {
@@ -22,13 +24,18 @@ async function answer(questions) {
   if (!Array.isArray(questions) || !questions.length || questions.length > 50) {
     throw new Error('Aucune question prise en charge, ou plus de 50 questions sur cette page.');
   }
-  const { apiKey } = await chrome.storage.session.get('apiKey');
-  const { model = 'gpt-4.1-mini' } = await chrome.storage.local.get('model');
-  if (!apiKey) throw new Error('Ouvrez les réglages pour saisir votre clé API OpenAI.');
+  const settings = await chrome.storage.local.get(['provider', 'model', 'model_openai', 'model_groq']);
+  const provider = settings.provider || 'openai';
+  if (!Object.hasOwn(MoodleIAProviders, provider)) throw new Error('Fournisseur inconnu. Vérifiez les réglages.');
+  const config = MoodleIAProviders[provider];
+  const keys = await chrome.storage.session.get(['apiKey', `apiKey_${provider}`]);
+  const apiKey = keys[`apiKey_${provider}`] || (provider === 'openai' ? keys.apiKey : undefined);
+  const model = settings[`model_${provider}`] || (provider === 'openai' ? settings.model : undefined) || config.model;
+  if (!apiKey) throw new Error(`Ouvrez les réglages pour saisir votre clé API ${config.name}.`);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 60000);
   try {
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    const response = await fetch(config.endpoint, {
       method: 'POST',
       signal: controller.signal,
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
@@ -42,7 +49,7 @@ async function answer(questions) {
       })
     });
     if (!response.ok) {
-      const errors = { 401: 'Clé API refusée.', 429: 'Quota API épuisé ou limite de requêtes atteinte.' };
+      const errors = { 400: 'Requête refusée. Vérifiez que le modèle choisi prend en charge le mode JSON.', 401: `Clé API ${config.name} refusée.`, 403: `Accès ${config.name} refusé pour ce compte.`, 404: 'Modèle introuvable. Vérifiez son nom dans les réglages.', 429: 'Quota API épuisé ou limite de requêtes atteinte. Réessayez plus tard.' };
       throw new Error(errors[response.status] || `Erreur du service IA (HTTP ${response.status}).`);
     }
     const payload = await response.json();

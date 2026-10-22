@@ -18,7 +18,7 @@
     label { display:block; margin:12px 0; }
   </style><section aria-label="Assistant IA pour entraînement">
     <h2>Bouton IA · Moodle</h2>
-    <p>Les questions de cette page seront envoyées à OpenAI. La requête utilise votre quota API.</p>
+    <p>Les questions de cette page seront envoyées au fournisseur choisi dans les réglages (Groq ou OpenAI). La requête utilise votre quota API.</p>
     <label><input type="checkbox" id="allowed"> Cet entraînement autorise l’IA.</label>
     <button id="answer" disabled>Demander et remplir</button><button id="settings" class="secondary">Réglages</button>
     <p id="status" role="status">Aucune soumission automatique.</p><div id="details"></div>

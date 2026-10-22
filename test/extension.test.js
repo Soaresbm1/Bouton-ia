@@ -80,14 +80,16 @@ test('panel sends question data only and fills a simulated response without subm
   assert.match(root.querySelector('#details').textContent, /<b>4<\/b>/);
   assert.equal(submissions, 0);
 });
-function background(apiKey, fetch) {
+function background(apiKey, fetch, settings = {}, extraKeys = {}) {
   let listener;
   const chrome = {
     runtime: { id: 'extension-id', onMessage: { addListener: fn => { listener = fn; } } },
     action: { onClicked: { addListener() {} } },
-    storage: { session: { get: async () => ({ apiKey }) }, local: { get: async () => ({}) } }
+    storage: { session: { get: async () => ({ apiKey, ...extraKeys }) }, local: { get: async () => settings } }
   };
-  vm.runInNewContext(source('background.js'), { chrome, fetch, AbortController, setTimeout, clearTimeout });
+  const context = vm.createContext({ chrome, fetch, AbortController, setTimeout, clearTimeout });
+  context.importScripts = name => vm.runInContext(source(name), context);
+  vm.runInContext(source('background.js'), context);
   return () => new Promise(resolve => listener({ type: 'answer', questions: [{ id: 'q1' }] }, { id: chrome.runtime.id }, resolve));
 }
 test('missing API key reports actionable error without requesting API', async () => {
@@ -105,4 +107,53 @@ test('API success, rate limits and invalid payloads are handled', async () => {
   assert.match((await limited()).error, /Quota/);
   const malformed = background('test-only', async () => ({ ok: true, json: async () => ({}) }));
   assert.match((await malformed()).error, /invalide/);
+});
+
+test('Groq uses its endpoint, model and its own key, never the OpenAI key', async () => {
+  const run = background('openai-test-only', async (url, options) => {
+    assert.equal(url, 'https://api.groq.com/openai/v1/chat/completions');
+    assert.equal(options.headers.Authorization, 'Bearer groq-test-only');
+    const body = JSON.parse(options.body);
+    assert.equal(body.model, 'llama-3.3-70b-versatile');
+    assert.equal(body.response_format.type, 'json_object');
+    return { ok: true, json: async () => ({ choices: [{ message: { content: '{"answers":[]}' } }] }) };
+  }, { provider: 'groq', model: 'old-openai-model' }, { apiKey_groq: 'groq-test-only' });
+  assert.equal((await run()).result.answers.length, 0);
+  const missing = background('openai-test-only', () => { throw new Error('Wrong key must never be sent'); }, { provider: 'groq' });
+  assert.match((await missing()).error, /clé API Groq/);
+});
+
+test('provider options save Groq key in session only and preserve OpenAI settings', async () => {
+  const dom = new JSDOM(source('options.html'), { runScripts: 'outside-only' });
+  const w = dom.window;
+  const local = { model: 'existing-openai-model' };
+  const session = { apiKey: 'openai-test-only' };
+  const storage = data => ({
+    get: async () => ({ ...data }),
+    set: async update => Object.assign(data, update),
+    remove: async names => { for (const name of [].concat(names)) delete data[name]; }
+  });
+  w.chrome = { storage: { local: storage(local), session: storage(session) } };
+  w.eval(source('providers.js'));
+  w.eval(source('options.js'));
+  await new Promise(resolve => setImmediate(resolve));
+  const provider = w.document.querySelector('#provider');
+  assert.equal(provider.value, 'openai');
+  assert.equal(w.document.querySelector('#model').value, 'existing-openai-model');
+  provider.value = 'groq';
+  provider.dispatchEvent(new w.Event('change'));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(w.document.querySelector('#model').value, 'llama-3.3-70b-versatile');
+  w.document.querySelector('#key').value = 'groq-test-only';
+  w.document.querySelector('form').dispatchEvent(new w.Event('submit', { cancelable: true }));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(local.provider, 'groq');
+  assert.equal(local.model, 'existing-openai-model');
+  assert.equal(local.model_groq, 'llama-3.3-70b-versatile');
+  assert.equal(session.apiKey_groq, 'groq-test-only');
+  assert.equal(JSON.stringify(local).includes('test-only'), false);
+  w.document.querySelector('#clear').click();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(session.apiKey_groq, undefined);
+  assert.equal(session.apiKey, 'openai-test-only');
 });
