@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="fr">
+<meta charset="utf-8">
+<title>Réglages · Bouton IA Moodle</title>
+<style>
+body { font:16px/1.6 system-ui,sans-serif; max-width:620px; margin:48px auto; padding:20px; color:#182333; background:#f7f9fd; }
+label { display:block; margin-top:20px; } input { display:block; box-sizing:border-box; width:100%; padding:12px; border:1px solid #aab7cd; border-radius:8px; font:inherit; }
+button { margin:20px 8px 0 0; padding:12px; border:0; border-radius:8px; background:#214ab4; color:white; font:inherit; cursor:pointer; }
+</style>
+<h1>Bouton IA · Moodle</h1>
+<p>Pour vos entraînements où l’IA est autorisée. Un abonnement ChatGPT ne comprend pas l’accès à l’API : une clé API OpenAI avec quota disponible est nécessaire.</p>
+<form id="settings">
+<label>Clé API OpenAI<input id="key" type="password" autocomplete="off" placeholder="Saisir une clé pour cette session du navigateur"></label>
+<p>La clé reste dans la mémoire de session de l’extension, sans synchronisation. Elle est effacée au redémarrage du navigateur ou au rechargement de l’extension. Laissez le champ vide pour conserver la clé de la session.</p>
+<label>Modèle<input id="model" required value="gpt-4.1-mini" spellcheck="false"></label>
+<button type="submit">Enregistrer</button><button type="button" id="clear">Effacer la clé</button>
+</form>
+<p id="status" role="status"></p>
+<p>Sur une page de questions Moodle, cliquez sur l’icône de l’extension, confirmez l’usage autorisé, puis cliquez sur « Demander et remplir ». Les questions et choix affichés sont envoyés à OpenAI ; la réponse remplit les champs sans soumettre le test.</p>
+<script src="options.js"></script>
+</html>
