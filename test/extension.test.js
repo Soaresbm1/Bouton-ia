@@ -21,7 +21,7 @@ function page() {
 test('extracts supported editable questions only', () => {
   const window = page();
   const questions = window.MoodleIA.collect(window.document);
-  assert.deepEqual(Array.from(questions, q => q.type), ['single', 'multiple', 'text']);
+  assert.deepEqual(Array.from(questions, q => q.type), ['single', 'multiple', 'text', 'matching']);
   assert.equal(questions[0].choices[1].label, '4');
   assert.equal(questions[0].prompt, 'Combien font 2 + 2 ?');
 });
@@ -75,7 +75,7 @@ test('panel sends question data only and fills a simulated response without subm
   assert.equal(request.type, 'answer');
   assert.equal(request.questions[0].fields, undefined);
   assert.equal(w.document.querySelectorAll('[name=q1]')[1].checked, true);
-  assert.match(root.querySelector('#status').textContent, /1\/3/);
+  assert.match(root.querySelector('#status').textContent, /1\/4/);
   assert.equal(root.querySelector('#details b'), null);
   assert.match(root.querySelector('#details').textContent, /<b>4<\/b>/);
   assert.equal(submissions, 0);
@@ -360,4 +360,97 @@ test('model loading handles rejected or missing keys without sending an OpenAI k
   const missing = await modelOptions(() => assert.fail('Must not call Groq with OpenAI key'), { apiKey: 'openai-test-only' });
   await missing.load();
   assert.match(missing.w.document.querySelector('#status').textContent, /Saisissez votre clé Groq/);
+});
+
+// Mirrors the table/td.text/select layout of Moodle's qtype_match renderer.
+const matchingFixture = `<form id="quiz"><div class="que match" id="match1"><div class="formulation">
+<input type="hidden" name="sequencecheck" value="1"><div class="qtext">Répartir selon le type de langage</div>
+<div class="ablock"><table class="answer"><tbody>
+<tr><td class="text">Récursivité</td><td class="control"><label class="accesshide" for="m1">Réponse 1</label><select id="m1">
+<option value="0">Choisir...</option><option value="10">Fonctionnel</option><option value="20">Impératif</option><option value="30" disabled>Indisponible</option></select></td></tr>
+<tr><td class="text">Séquence</td><td class="control"><label class="accesshide" for="m2">Réponse 2</label><select id="m2">
+<option value="0">Choisir...</option><option value="20">Impératif</option><option value="10">Fonctionnel</option></select></td></tr>
+</tbody></table></div></div></div><button type="submit">Page suivante</button></form>
+<select id="navigation"><option value="private">Navigation hors question</option></select>`;
+function matching(html = matchingFixture) {
+  const { window } = new JSDOM(html, { runScripts: 'outside-only', url: 'https://moodle.example/mod/quiz/attempt.php' });
+  window.eval(source('questions.js'));
+  return window;
+}
+test('Moodle matching extracts each row with its own option IDs, excluding placeholders and disabled options', () => {
+  const w = matching();
+  const [q] = w.MoodleIA.collect(w.document);
+  assert.equal(q.type, 'matching');
+  assert.equal(q.fields.length, 2);
+  assert.deepEqual(Array.from(q.matches, item => item.label), ['Récursivité', 'Séquence']);
+  assert.deepEqual(Array.from(q.matches[0].choices, c => [c.id, c.label]), [['1', 'Fonctionnel'], ['2', 'Impératif']]);
+  assert.deepEqual(Array.from(q.matches[1].choices, c => [c.id, c.label]), [['1', 'Impératif'], ['2', 'Fonctionnel']]);
+});
+test('matching applies out-of-order answers by menu ID and fires change without navigating', () => {
+  const w = matching();
+  const [q] = w.MoodleIA.collect(w.document);
+  let changes = 0, submissions = 0;
+  w.document.addEventListener('change', () => changes++);
+  w.document.querySelector('form').onsubmit = event => { event.preventDefault(); submissions++; };
+  assert.equal(w.MoodleIA.apply(q, { id: q.id, matches: [{ id: '1', choice: '1' }, { id: '0', choice: '1' }] }), true);
+  assert.equal(q.fields[0].value, '10');
+  assert.equal(q.fields[1].value, '20');
+  assert.equal(changes, 2);
+  assert.equal(submissions, 0);
+  assert.equal(w.document.querySelector('#navigation').value, 'private');
+  // The same category can be used for more than one row; its index can differ.
+  w.MoodleIA.apply(q, { id: q.id, matches: [{ id: '0', choice: '1' }, { id: '1', choice: '2' }] });
+  assert.deepEqual(Array.from(q.fields, field => field.value), ['10', '10']);
+});
+test('invalid, missing, duplicate or placeholder matches leave all menus unchanged', () => {
+  const w = matching();
+  const [q] = w.MoodleIA.collect(w.document);
+  for (const matches of [
+    [{ id: '0', choice: '1' }],
+    [{ id: '0', choice: '1' }, { id: '0', choice: '2' }],
+    [{ id: '0', choice: '0' }, { id: '1', choice: '1' }],
+    [{ id: '0', choice: '3' }, { id: '1', choice: '1' }],
+    [{ id: '0', choice: '1' }, { id: '1', choice: '99' }]
+  ]) {
+    assert.throws(() => w.MoodleIA.apply(q, { id: q.id, matches }), /invalides ou incomplètes/);
+    assert.deepEqual(Array.from(q.fields, field => field.value), ['0', '0']);
+  }
+  assert.equal(w.MoodleIA.apply(q, { id: q.id, matches: [] }), false);
+});
+test('changing a menu option while waiting invalidates the earlier AI answer', () => {
+  const w = matching();
+  const [q] = w.MoodleIA.collect(w.document);
+  q.fields[1].options[1].textContent = 'Nouvelle catégorie';
+  assert.throws(() => w.MoodleIA.apply(q, { id: q.id, matches: [{ id: '0', choice: '1' }, { id: '1', choice: '1' }] }), /question a changé/);
+  assert.equal(q.fields[0].value, '0');
+});
+test('panel sends row labels and choices to AI and fills simulated matching answer', async () => {
+  const w = matching();
+  let root;
+  const attach = w.Element.prototype.attachShadow;
+  w.Element.prototype.attachShadow = function(options) { root = attach.call(this, options); return root; };
+  w.alert = () => assert.fail('Matching must be detected');
+  w.chrome = { runtime: { sendMessage: async message => {
+    const [question] = message.questions;
+    assert.equal(question.fields, undefined);
+    assert.equal(question.matches[0].label, 'Récursivité');
+    return { result: { answers: [{ id: question.id, matches: [{ id: '0', choice: '1' }, { id: '1', choice: '1' }] }] } };
+  } } };
+  w.eval(source('content.js'));
+  const allowed = root.querySelector('#allowed');
+  allowed.checked = true; allowed.dispatchEvent(new w.Event('change'));
+  root.querySelector('#answer').click();
+  await new Promise(done => setImmediate(done));
+  assert.equal(w.document.querySelector('#m1').value, '10');
+  assert.equal(w.document.querySelector('#m2').value, '20');
+  assert.match(root.querySelector('#status').textContent, /1\/1/);
+});
+test('independent initial-letter blanks preserve their lines and individual context', () => {
+  const w = matching(`<div class="que multianswer" id="initials"><div class="formulation">
+  <p>Complétez sans répéter la première lettre : SELF</p>
+  S<input type="text"><br>E<input type="text"><br>L<input type="text"><br>F<input type="text">
+  </div></div>`);
+  const [q] = w.MoodleIA.collect(w.document);
+  assert.match(q.prompt, /S\[champ 0\]\nE\[champ 1\]\nL\[champ 2\]\nF\[champ 3\]/);
+  assert.deepEqual(Array.from(q.blanks, item => item.context), ['S[champ 0]', 'E[champ 1]', 'L[champ 2]', 'F[champ 3]']);
 });

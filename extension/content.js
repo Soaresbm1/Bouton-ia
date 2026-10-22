@@ -1,7 +1,7 @@
 (() => {
   if (document.getElementById('moodle-ia-extension')) return;
   if (!MoodleIA.collect(document).length) {
-    alert('Aucune question reconnue. Ouvrez un entraînement avec ses questions affichées. Les QCM, réponses courtes et textes à trous Moodle ainsi que les QCM de page avec un titre « Question 1 » sont pris en charge.');
+    alert('Aucune question reconnue. Ouvrez un entraînement avec ses questions affichées. Les QCM, réponses courtes, textes à trous et associations par menus déroulants Moodle sont pris en charge, ainsi que les QCM de page avec un titre « Question 1 ».');
     return;
   }
   const host = document.createElement('div');
@@ -38,7 +38,7 @@
     status.textContent = 'Réflexion en cours…';
     try {
       const questions = MoodleIA.collect(document);
-      if (!questions.length) throw new Error('Aucune question prise en charge : QCM, vrai/faux, réponse courte ou texte à trous attendus.');
+      if (!questions.length) throw new Error('Aucune question prise en charge : QCM, vrai/faux, réponse courte, texte à trous ou association par menus déroulants attendus.');
       const { result, error } = await chrome.runtime.sendMessage({
         type: 'answer', questions: questions.map(({ fields, ...data }) => data)
       });

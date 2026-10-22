@@ -1,5 +1,13 @@
 (() => {
   const clean = node => (node?.textContent || '').replace(/\s+/g, ' ').trim();
+  function readable(node) {
+    node.querySelectorAll('br').forEach(element => element.replaceWith('\n'));
+    node.querySelectorAll('p,li,div,tr,h1,h2,h3,h4,h5,h6').forEach(element => {
+      element.prepend('\n');
+      element.append('\n');
+    });
+    return (node.textContent || '').split('\n').map(line => line.replace(/\s+/g, ' ').trim()).filter(Boolean).join('\n');
+  }
   const editable = field => !field.disabled && !field.readOnly &&
     !field.closest('[hidden], [aria-hidden="true"]');
   function choiceLabel(field) {
@@ -12,16 +20,27 @@
     }
     return text.replace(/\s+/g, ' ').trim() || clean(field.parentElement);
   }
+  function matchingItem(field, index) {
+    const rowText = field.closest('tr')?.querySelector('.text');
+    const label = rowText || [...(field.labels || [])].find(node => !node.matches('.accesshide,.sr-only,.visually-hidden'));
+    const choices = [...field.options].filter(option => option.value.trim() && !option.disabled && !option.closest('optgroup[disabled]') &&
+      !/^(?:choisir|choose|select|sélectionner)(?:\s*(?:\.{3}|…))?\s*$/i.test(clean(option)))
+      .map(option => ({ id: String(option.index), label: clean(option) }));
+    return { id: String(index), label: clean(label) || `Champ ${index}`, choices };
+  }
   function build(id, prompt, fields) {
     if (!fields.length) return [];
     let type;
     if (fields.every(field => field.type === 'radio')) type = 'single';
     else if (fields.every(field => field.type === 'checkbox')) type = 'multiple';
+    else if (fields.every(field => field.tagName === 'SELECT' && !field.multiple)) type = 'matching';
     else if (fields.every(field => ['text', 'number'].includes(field.type))) type = fields.length === 1 ? 'text' : 'blanks';
     else return [];
     if (!clean(prompt)) return [];
-    const choices = ['text', 'blanks'].includes(type) ? [] : fields.map((field, i) => ({ id: String(i), label: choiceLabel(field) }));
+    const choices = ['text', 'blanks', 'matching'].includes(type) ? [] : fields.map((field, i) => ({ id: String(i), label: choiceLabel(field) }));
     if (choices.some(choice => !choice.label)) return [];
+    const matches = type === 'matching' ? fields.map(matchingItem) : [];
+    if (matches.some(item => !item.choices.length)) return [];
     const markedPrompt = prompt.cloneNode(true);
     const originals = [...prompt.querySelectorAll('input,textarea,select')];
     [...markedPrompt.querySelectorAll('input,textarea,select')].forEach((node, i) => {
@@ -29,9 +48,12 @@
       node.replaceWith(index >= 0 ? `[champ ${index}]` : '');
     });
     markedPrompt.querySelectorAll('script,style,.accesshide,.sr-only,.visually-hidden,.feedback,.specificfeedback,.validationerror').forEach(node => node.remove());
-    return [{ id, prompt: clean(markedPrompt),
+    const promptText = readable(markedPrompt);
+    return [{ id, prompt: promptText,
       images: [...prompt.querySelectorAll('img')].map(img => img.alt || 'Image sans description'),
-      type, choices, ...(type === 'blanks' ? { blanks: fields.map((field, i) => ({ id: String(i) })) } : {}), fields }];
+      type, choices, ...(type === 'matching' ? { matches } : {}),
+      ...(type === 'blanks' ? { blanks: fields.map((field, i) => ({ id: String(i),
+        context: promptText.split('\n').find(line => line.includes(`[champ ${i}]`)) || '' })) } : {}), fields }];
   }
   function collectDrill(doc) {
     if (!/^\/mod\/page\/view\.php$/.test(doc.location.pathname)) return [];
@@ -82,6 +104,22 @@
   function apply(question, answer) {
     if (!answer || answer.id !== question.id) throw new Error('Question incorrecte.');
     checkCurrent(question);
+    if (question.type === 'matching') {
+      const matches = answer.matches;
+      if (!Array.isArray(matches) || !matches.length) return false;
+      if (matches.length !== question.matches.length || new Set(matches.map(item => item?.id)).size !== matches.length ||
+          matches.some(item => !question.matches.find(expected => expected.id === item?.id)?.choices.some(choice => choice.id === item.choice))) {
+        throw new Error('Associations invalides ou incomplètes. Question laissée intacte.');
+      }
+      const ordered = question.matches.map(item => matches.find(match => match.id === item.id).choice);
+      question.fields.forEach((field, i) => {
+        checkCurrent(question);
+        field.selectedIndex = Number(ordered[i]);
+        field.dispatchEvent(new Event('input', { bubbles: true }));
+        field.dispatchEvent(new Event('change', { bubbles: true }));
+      });
+      return true;
+    }
     if (question.type === 'blanks') {
       const values = answer.values;
       if (!Array.isArray(values) || !values.length) return false;
